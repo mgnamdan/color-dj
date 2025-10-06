@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MoodMixer • color → playlist vibes</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>MoodMixer</h1>
+    <p class="tagline">Pick a color. Hear its vibe.</p>
+  </header>
+
+  <main>
+    <section class="picker">
+      <div class="controls">
+        <label class="color-field">
+          <span>Pick a color</span>
+          <input id="colorInput" type="color" value="#6e5df6" />
+        </label>
+
+        <label class="hex-field">
+          <span>or paste hex</span>
+          <input id="hexInput" type="text" value="#6e5df6" maxlength="7" placeholder="#RRGGBB" />
+        </label>
+
+        <button id="loginBtn" class="ghost">Connect Spotify</button>
+        <button id="mixBtn" class="primary">Get my mix</button>
+      </div>
+
+      <div class="swatch">
+        <div id="swatch" class="swatch-inner"></div>
+        <div id="metrics" class="metrics">
+          <div><b>Tempo</b> <span id="tempoVal">—</span> bpm</div>
+          <div><b>Energy</b> <span id="energyVal">—</span></div>
+          <div><b>Valence</b> <span id="valenceVal">—</span></div>
+          <div><b>Seeds</b> <span id="seedVal">—</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 id="resultsTitle">Your color-matched picks</h2>
+      <div id="grid" class="grid"></div>
+    </section>
+  </main>
+
+  <footer>
+    <small>Built for learning • Uses Spotify Recommendations API • No playlist write actions</small>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
