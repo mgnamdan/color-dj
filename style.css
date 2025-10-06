@@ -12,8 +12,8 @@ html,body{height:100%}
 body{
   margin:0; font-family: ui-sans-serif, system-ui, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji;
   color:var(--ink); background:
-    radial-gradient(1200px 600px at 80% -10%, #312b7a44, transparent 60%),
-    radial-gradient(800px 400px at 10% 110%, #0ea5e94a, transparent 60%),
+    radial-gradient(1200px 600px at 80% -10%, #05e61f44, transparent 60%),
+    radial-gradient(800px 400px at 10% 110%, #327e524a, transparent 60%),
     var(--bg);
 }
 
