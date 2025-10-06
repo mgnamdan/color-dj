@@ -1,13 +1,9 @@
-/* ========= SETUP =========
-  1) Make a Spotify App: https://developer.spotify.com/dashboard
-  2) Add your Redirect URI (e.g., http://localhost:5500 or https://your.site)
-  3) Fill CLIENT_ID and REDIRECT_URI below.
-*/
+
 const CLIENT_ID = "16ddc329177f4de4b340d7e7570fde13";
 const REDIRECT_URI = "https://mgnamdan.github.io/color-dj/"; // change to your deployed URL when hosting
 const SCOPES = ""; // recommendations don’t need user scopes
 
-// --- UI elements
+/* ========= DOM ========= */
 const colorInput = document.getElementById("colorInput");
 const hexInput   = document.getElementById("hexInput");
 const swatch     = document.getElementById("swatch");
@@ -19,7 +15,7 @@ const loginBtn   = document.getElementById("loginBtn");
 const mixBtn     = document.getElementById("mixBtn");
 const grid       = document.getElementById("grid");
 
-let accessToken = null; // stored after PKCE auth
+let accessToken = null;
 
 /* ========= AUTH (PKCE) ========= */
 async function sha256(plain) {
@@ -70,17 +66,54 @@ async function handleRedirect(){
   const json = await res.json();
   accessToken = json.access_token;
   loginBtn.textContent = "Connected ✓";
-  loginBtn.classList.add("connected");
-  // optional: remove ?code=... from the URL
-  history.replaceState({}, "", REDIRECT_URI);
+  history.replaceState({}, "", REDIRECT_URI); // clean URL
 }
 
-/* ========= COLOR → FEATURES MAPPING =========
-   We map HSL to Spotify audio features:
-   - hue (0–360)        → target_tempo (60–180 bpm) and seed genres
-   - saturation (0–100) → target_energy (0–1)
-   - lightness (0–100)  → target_valence (0–1)
+/* ========= GENRE NORMALIZATION =========
+   Only allowed seed genres will be sent. Synonyms translate to allowed ones.
+   (Trimmed but broad, safe set.)
 */
+const ALLOWED_GENRES = new Set([
+  "acoustic","afrobeat","alt-rock","alternative","ambient","anime","bluegrass","blues",
+  "bossanova","breakbeat","british","chicago-house","chill","classical","club","country",
+  "dance","dancehall","death-metal","deep-house","detroit-techno","disco","disney",
+  "drum-and-bass","dub","dubstep","edm","electro","electronic","emo","folk","forro",
+  "funk","garage","gospel","goth","grindcore","groove","grunge","guitar","happy","hard-rock",
+  "hardcore","hardstyle","heavy-metal","hip-hop","holidays","honky-tonk","house","idm",
+  "indian","indie","indie-pop","industrial","j-dance","j-idol","j-pop","j-rock","jazz",
+  "k-pop","latin","metal","metalcore","minimal-techno","movies","new-age","new-release",
+  "opera","party","philippines-opm","piano","pop","power-pop","progressive-house","psych-rock",
+  "punk","punk-rock","r-n-b","rainy-day","reggae","reggaeton","road-trip","rock","rock-n-roll",
+  "rockabilly","romance","sad","salsa","samba","sertanejo","show-tunes","singer-songwriter",
+  "ska","sleep","songwriter","soul","soundtracks","spanish","study","summer","synth-pop",
+  "tango","techno","trance","trip-hop","work-out","world-music"
+]);
+
+const GENRE_SYNONYMS = {
+  "electropop":"synth-pop",
+  "alt-pop":"indie-pop",
+  "dream-pop":"indie-pop",
+  "downtempo":"trip-hop",
+  "chillout":"chill",
+  "rnb":"r-n-b",
+  "hiphop":"hip-hop",
+  "lofi":"chill",           // a reasonable proxy
+  "lo-fi":"chill",
+  "bedroom-pop":"indie-pop",
+  "alt":"alternative"
+};
+
+function toAllowedGenres(list) {
+  const out = [];
+  for (const g of list) {
+    const norm = (GENRE_SYNONYMS[g] || g).toLowerCase();
+    if (ALLOWED_GENRES.has(norm)) out.push(norm);
+  }
+  // De-dup + max 3 (Spotify can take up to 5 mixed seeds, but we keep 3 for clarity)
+  return [...new Set(out)].slice(0,3);
+}
+
+/* ========= COLOR → FEATURES ========= */
 function hexToRgb(hex){
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   if(!m) return null;
@@ -112,59 +145,43 @@ function colorToFeatures(hex){
 
   // tempo from hue: map 0–360 → 60–180 bpm (reds faster, blues calmer)
   const tempo = Math.round(60 + (h/360) * 120);
+
   // energy from saturation (0–100 → 0–1)
   const energy = clamp01(s/100);
+
   // valence from lightness (0–100 → 0–1)
   const valence = clamp01(l/100);
 
-  // genre seeds from hue buckets
-  let seeds;
-  if (h < 20 || h >= 340) seeds = ["rock","metal","punk"];
-  else if (h < 70)        seeds = ["pop","dance","edm"];
-  else if (h < 160)       seeds = ["acoustic","folk","singer-songwriter"];
-  else if (h < 210)       seeds = ["chill","ambient","downtempo"];
-  else if (h < 260)       seeds = ["indie","alt-rock","dream-pop"];
-  else if (h < 300)       seeds = ["r-n-b","hip-hop","neo-soul"];
-  else                    seeds = ["synth-pop","electropop","alt-pop"];
+  // hue→seed genres (raw buckets), then normalize to allowed seeds
+  let seedsRaw;
+  if (h < 20 || h >= 340)      seedsRaw = ["rock","metal","punk"];
+  else if (h < 70)             seedsRaw = ["pop","dance","edm"];
+  else if (h < 160)            seedsRaw = ["acoustic","folk","singer-songwriter"];
+  else if (h < 210)            seedsRaw = ["chill","ambient","downtempo"];
+  else if (h < 260)            seedsRaw = ["indie","alt-rock","dream-pop"];
+  else if (h < 300)            seedsRaw = ["r-n-b","hip-hop","neo-soul"];
+  else                         seedsRaw = ["synth-pop","electropop","alt-pop"];
 
-  return { tempo, energy: +energy.toFixed(2), valence: +valence.toFixed(2), seeds, hsl: {h,s,l} };
+  const seeds = toAllowedGenres(seedsRaw);
+
+  return {
+    tempo,
+    energy: +energy.toFixed(2),
+    valence: +valence.toFixed(2),
+    seeds,
+    hsl: {h,s,l}
+  };
 }
 
+/* ========= UI HELPERS ========= */
 function updateSwatch(hex, feats){
   swatch.style.background = `linear-gradient(135deg, ${hex}, #0d0d14 70%)`;
   tempoEl.textContent   = feats ? feats.tempo : "—";
   energyEl.textContent  = feats ? feats.energy : "—";
   valenceEl.textContent = feats ? feats.valence : "—";
-  seedEl.textContent    = feats ? feats.seeds.join(", ") : "—";
+  seedEl.textContent    = feats ? (feats.seeds.length ? feats.seeds.join(", ") : "—") : "—";
 }
-
-/* ========= SPOTIFY CALL ========= */
-async function getRecommendations(feats){
-  if(!accessToken){
-    alert("Connect your Spotify account first.");
-    return [];
-  }
-  // build query
-  const params = new URLSearchParams({
-    limit: "24",
-    seed_genres: feats.seeds.slice(0,3).join(","),
-    target_tempo: feats.tempo,
-    target_energy: feats.energy,
-    target_valence: feats.valence
-  });
-  const res = await fetch(`https://api.spotify.com/v1/recommendations?${params.toString()}`, {
-    headers: { Authorization: `Bearer ${accessToken}` }
-  });
-  if(!res.ok){
-    console.error("Recommendations failed", await res.text());
-    if(res.status === 401) alert("Session expired—please reconnect Spotify.");
-    return [];
-  }
-  const json = await res.json();
-  return json.tracks || [];
-}
-
-/* ========= RENDER ========= */
+function escapeHtml(s){ return s?.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) || ""; }
 function card(track){
   const img = track.album?.images?.find(i => i.width >= 300) || track.album?.images?.[0];
   const art = img ? img.url : "";
@@ -185,7 +202,81 @@ function card(track){
 function renderTracks(tracks){
   grid.innerHTML = tracks.map(card).join("");
 }
-function escapeHtml(s){ return s?.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) || ""; }
+
+/* ========= RECOMMENDATIONS (with ranges + fallbacks) ========= */
+function clamp(val, lo, hi){ return Math.max(lo, Math.min(hi, val)); }
+
+async function getRecommendations(feats){
+  if(!accessToken){ alert("Connect Spotify first."); return []; }
+
+  // Primary seeds (validated) or safe default
+  let seeds = feats.seeds.length ? feats.seeds : ["indie","pop","rock"];
+
+  // Build a search window around the color-derived targets
+  const minTempo   = clamp(feats.tempo - 30, 50, 200);
+  const maxTempo   = clamp(feats.tempo + 30, 50, 200);
+  const minEnergy  = clamp(+(feats.energy - 0.25).toFixed(2), 0, 1);
+  const maxEnergy  = clamp(+(feats.energy + 0.25).toFixed(2), 0, 1);
+  const minValence = clamp(+(feats.valence - 0.25).toFixed(2), 0, 1);
+  const maxValence = clamp(+(feats.valence + 0.25).toFixed(2), 0, 1);
+
+  // A small helper to call the endpoint
+  async function callRecs(params){
+    const res = await fetch(`https://api.spotify.com/v1/recommendations?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if(!res.ok){
+      console.error("Recommendations failed", res.status, await res.text());
+      return { tracks: [], seeds: [] };
+    }
+    return res.json();
+  }
+
+  // Pass 1: normal query (ranges + a gentle target tempo)
+  let params = new URLSearchParams({
+    limit: "24",
+    seed_genres: seeds.slice(0,3).join(","),
+    min_tempo: String(minTempo),
+    max_tempo: String(maxTempo),
+    min_energy: String(minEnergy),
+    max_energy: String(maxEnergy),
+    min_valence: String(minValence),
+    max_valence: String(maxValence),
+    target_tempo: String(feats.tempo),
+    market: "from_token" // helps fit the user’s market
+  });
+
+  let json = await callRecs(params);
+  if (json.tracks?.length) {
+    console.log("Pass1 OK", json.seeds);
+    return json.tracks;
+  }
+
+  // Pass 2: broaden seeds if we had none or it returned empty
+  seeds = ["indie","pop","rock"];
+  params.set("seed_genres", seeds.join(","));
+  json = await callRecs(params);
+  if (json.tracks?.length) {
+    console.log("Pass2 OK (fallback seeds)", json.seeds);
+    return json.tracks;
+  }
+
+  // Pass 3: very broad sweep (remove target_tempo; widen more)
+  params.delete("target_tempo");
+  params.set("min_tempo", "50");
+  params.set("max_tempo", "200");
+  params.set("min_energy", "0");
+  params.set("max_energy", "1");
+  params.set("min_valence", "0");
+  params.set("max_valence", "1");
+  json = await callRecs(params);
+  if (json.tracks?.length) {
+    console.log("Pass3 OK (broad)", json.seeds);
+    return json.tracks;
+  }
+
+  return [];
+}
 
 /* ========= EVENTS ========= */
 function syncFromColor(){
@@ -203,25 +294,18 @@ function syncFromHex(){
 }
 async function handleMix(){
   const hex = hexInput.value.trim().toLowerCase();
-  if(!/^#[0-9a-f]{6}$/.test(hex)) { alert("Please enter a valid hex color like #6e5df6"); return; }
+  if(!/^#[0-9a-f]{6}$/.test(hex)) { alert("Please enter a valid hex like #6e5df6"); return; }
   const feats = colorToFeatures(hex);
   updateSwatch(hex, feats);
-  // Subtle progress state
   grid.innerHTML = "<div style='opacity:.8'>Finding tracks that match your color…</div>";
   const tracks = await getRecommendations(feats);
-  if(!tracks.length){ grid.innerHTML = "<div>Nothing found. Try a different color?</div>"; return; }
-  renderTracks(tracks);
+  grid.innerHTML = tracks.length ? tracks.map(card).join("") : "<div>Nothing found. Try another color?</div>";
 }
 
 /* ========= INIT ========= */
 window.addEventListener("DOMContentLoaded", async () => {
-  // hydrate from URL/PKCE
   await handleRedirect();
-
-  // seed initial swatch
   updateSwatch(hexInput.value, colorToFeatures(hexInput.value));
-
-  // UI hooks
   colorInput.addEventListener("input", syncFromColor);
   hexInput.addEventListener("input", syncFromHex);
   loginBtn.addEventListener("click", beginAuth);
